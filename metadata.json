@@ -1,0 +1,8 @@
+{
+  "name": "JobFinder AI",
+  "description": "A next-gen recruitment platform using Gemini AI for candidate matching and automated interviewing.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
