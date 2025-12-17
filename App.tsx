@@ -8,7 +8,7 @@ import InterviewModal from './components/InterviewModal';
 // Localhost falls back to port 5000 for local dev speed.
 // Using 127.0.0.1 instead of 'localhost' prevents Node v17+ from trying IPv6 (::1) 
 // when the server is listening on IPv4.
-const API_URL = process.env.API_URL || 'http://127.0.0.1:5000/api';
+const API_URL = process.env.API_URL || 'https://jobfinder-1-d3ue.onrender.com/api';
 
 const AUTH_URL = `${API_URL}/auth`;
 const TECH_ERROR_MSG = "Our Tech Team are currently working on the system. We are aware of the error. Please try again later after 1-2 hours.";
