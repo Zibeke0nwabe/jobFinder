@@ -4,10 +4,26 @@ import { UserProfile, JobListing, UserRole, Application, ApplicationStatus, Inte
 import { analyzeApplicationMatch, generateInterviewFeedback, researchCompany, generateRecruiterSummary } from './services/gemini';
 import InterviewModal from './components/InterviewModal';
 
+// Production/Dev toggle. If we're on Render, we need the real backend URL. 
+// Localhost falls back to port 5000 for local dev speed.
+// Using 127.0.0.1 instead of 'localhost' prevents Node v17+ from trying IPv6 (::1) 
+// when the server is listening on IPv4.
 const API_URL = process.env.API_URL || 'http://127.0.0.1:5000/api';
 
 const AUTH_URL = `${API_URL}/auth`;
 const TECH_ERROR_MSG = "Our Tech Team are currently working on the system. We are aware of the error. Please try again later after 1-2 hours.";
+
+// Initial Form States (Functions to ensure fresh objects every time)
+const getInitialRegForm = () => ({ 
+  role: UserRole.CANDIDATE, name: '', email: '', password: '', phone: '', address: '', 
+  title: '', summary: '', company: '', website: '',
+  experience: [], education: [], skills: []
+});
+
+const getInitialJobForm = () => ({ 
+  title: '', company: '', location: '', type: 'Full-time', salary: '', desc: '', reqs: '', questions: '', 
+  interviewSetting: 'OPEN'
+});
 
 type IconProps = React.SVGProps<SVGSVGElement>;
 
@@ -36,7 +52,8 @@ const Icons = {
   Star: (props: IconProps) => <svg {...props} className={`w-5 h-5 ${props.className || ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>,
   Practice: (props: IconProps) => <svg {...props} className={`w-6 h-6 ${props.className || ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
   Refresh: (props: IconProps) => <svg {...props} className={`w-6 h-6 ${props.className || ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
-  CloudOff: (props: IconProps) => <svg {...props} className={`w-5 h-5 ${props.className || ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+  CloudOff: (props: IconProps) => <svg {...props} className={`w-5 h-5 ${props.className || ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>,
+  ArrowLeft: (props: IconProps) => <svg {...props} className={`w-5 h-5 ${props.className || ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
 };
 
 const getScoreColor = (score: number) => {
@@ -76,7 +93,7 @@ const App: React.FC = () => {
 
   // Job Application State
   const [selectedJob, setSelectedJob] = useState<JobListing | null>(null);
-  const [selectedJobDetail, setSelectedJobDetail] = useState<JobListing | null>(null);
+  const [selectedJobDetail, setSelectedJobDetail] = useState<JobListing | null>(null); // Used for viewing details in full page
   const [showApplyModal, setShowApplyModal] = useState(false);
   
   // AI Research
@@ -120,16 +137,8 @@ const App: React.FC = () => {
   const [isServerError, setIsServerError] = useState(false);
 
   // Data Entry Forms
-  const [regForm, setRegForm] = useState<Partial<UserProfile> & { password?: string }>({ 
-    role: UserRole.CANDIDATE, name: '', email: '', password: '', phone: '', address: '', 
-    title: '', summary: '', company: '', website: '',
-    experience: [], education: [], skills: []
-  });
-
-  const [jobForm, setJobForm] = useState({ 
-    title: '', company: '', location: '', type: 'Full-time', salary: '', desc: '', reqs: '', questions: '', 
-    interviewSetting: 'OPEN' // Default to OPEN
-  });
+  const [regForm, setRegForm] = useState<Partial<UserProfile> & { password?: string }>(getInitialRegForm());
+  const [jobForm, setJobForm] = useState(getInitialJobForm());
 
   useEffect(() => {
     const savedSession = localStorage.getItem('jf_session');
@@ -298,6 +307,7 @@ const App: React.FC = () => {
         showAlert("System Offline", TECH_ERROR_MSG, "error");
         return;
     }
+    setRegForm(getInitialRegForm()); // Reset Login/Reg Form
     setActiveTab('auth_login');
     setRegStep(1);
     setEnteredOTP('');
@@ -371,6 +381,7 @@ const App: React.FC = () => {
        setCurrentUser(data.user);
        localStorage.setItem('jf_session', JSON.stringify(data.user));
        setActiveTab(data.user.role === UserRole.RECRUITER ? 'dashboard' : 'search_job');
+       setRegForm(getInitialRegForm()); // Clear form after success
     } catch (err: any) {
        const msg = err.message === 'Failed to fetch' ? TECH_ERROR_MSG : err.message;
        showAlert("System Error", msg, "error");
@@ -426,6 +437,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('jf_session');
+    setRegForm(getInitialRegForm());
     setActiveTab('auth_login');
     setIsSidebarOpen(false);
   };
@@ -468,6 +480,7 @@ const App: React.FC = () => {
     setResearchResult(null); 
     setShowResearch(false);
     setSelectedJobDetail(job);
+    setActiveTab('job_details'); // Switch to the details tab page
   };
 
   const handleApplyClick = (job: JobListing) => {
@@ -479,7 +492,7 @@ const App: React.FC = () => {
     if (applications.some(a => a.jobId === job.id && a.userId === currentUser.id)) return showAlert("Already Applied", "You have already submitted an application for this position.", "info");
     
     setSelectedJob(job);
-    setSelectedJobDetail(null);
+    // Keep detail view if we are on it, otherwise detail is null
     setShowApplyModal(true);
   };
 
@@ -601,6 +614,7 @@ const App: React.FC = () => {
            }
         });
         showAlert("Job Posted", "Your job listing has been created and alerts sent to matching candidates.", "success");
+        setJobForm(getInitialJobForm()); // Reset Form
         setActiveTab('dashboard');
     } catch(e) { showAlert("Error", "Failed to post job", "error"); }
   };
@@ -825,20 +839,20 @@ const App: React.FC = () => {
                 <div className="space-y-5">
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
-                    <input type="email" placeholder="name@company.com" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition" value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})} />
+                    <input type="email" autoComplete="username" placeholder="name@company.com" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition" value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})} />
                   </div>
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <label className="block text-sm font-bold text-gray-700">Password</label>
                       <button onClick={() => setActiveTab('auth_forgot')} className="text-xs font-bold text-primary hover:text-black">Forgot Password?</button>
                     </div>
-                    <input type="password" placeholder="••••••••" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition" value={regForm.password} onChange={e => setRegForm({...regForm, password: e.target.value})} />
+                    <input type="password" autoComplete="current-password" placeholder="••••••••" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition" value={regForm.password} onChange={e => setRegForm({...regForm, password: e.target.value})} />
                   </div>
                   <button onClick={handleLogin} disabled={authLoading} className="w-full bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition shadow-lg flex justify-center items-center gap-2">
                     {authLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Sign In'}
                   </button>
                   <div className="text-center mt-6 text-gray-500">
-                    Don't have an account? <button onClick={() => { setActiveTab('auth_register'); setRegStep(1); }} className="font-bold text-black hover:text-primary">Create Account</button>
+                    Don't have an account? <button onClick={() => { setActiveTab('auth_register'); setRegStep(1); setRegForm(getInitialRegForm()); }} className="font-bold text-black hover:text-primary">Create Account</button>
                   </div>
                 </div>
               </div>
@@ -859,19 +873,19 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Full Name</label>
-                      <input type="text" placeholder="John Doe" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.name} onChange={e => setRegForm({...regForm, name: e.target.value})} />
+                      <input type="text" autoComplete="off" placeholder="John Doe" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.name} onChange={e => setRegForm({...regForm, name: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
-                      <input type="email" placeholder="john@example.com" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})} />
+                      <input type="email" autoComplete="new-password" placeholder="john@example.com" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Password</label>
-                      <input type="password" placeholder="••••••••" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.password} onChange={e => setRegForm({...regForm, password: e.target.value})} />
+                      <input type="password" autoComplete="new-password" placeholder="••••••••" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.password} onChange={e => setRegForm({...regForm, password: e.target.value})} />
                     </div>
                     <button onClick={() => setRegStep(2)} className="w-full bg-black text-white py-4 rounded-xl font-bold mt-4">Continue →</button>
                     <div className="text-center mt-6 text-gray-500">
-                      Already have an account? <button onClick={() => setActiveTab('auth_login')} className="font-bold text-black hover:text-primary">Sign In</button>
+                      Already have an account? <button onClick={() => { setActiveTab('auth_login'); setRegForm(getInitialRegForm()); }} className="font-bold text-black hover:text-primary">Sign In</button>
                     </div>
                   </div>
                 )}
@@ -883,21 +897,21 @@ const App: React.FC = () => {
                     {regForm.role === UserRole.RECRUITER ? (
                        <div>
                           <label className="block text-sm font-bold text-gray-700 mb-2">Company Name</label>
-                          <input type="text" placeholder="e.g. Esgela.com" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.company} onChange={e => setRegForm({...regForm, company: e.target.value})} />
+                          <input type="text" autoComplete="off" placeholder="e.g. Google" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.company} onChange={e => setRegForm({...regForm, company: e.target.value})} />
                        </div>
                     ) : (
                        <div>
                           <label className="block text-sm font-bold text-gray-700 mb-2">Current Job Title</label>
-                          <input type="text" placeholder="e.g. Frontend Developer" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.title} onChange={e => setRegForm({...regForm, title: e.target.value})} />
+                          <input type="text" autoComplete="off" placeholder="e.g. Frontend Developer" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.title} onChange={e => setRegForm({...regForm, title: e.target.value})} />
                        </div>
                     )}
                     <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">Phone Number</label>
-                        <input type="text" placeholder="+1 234 567 890" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} />
+                        <input type="text" autoComplete="off" placeholder="+1 234 567 890" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">Location / Address</label>
-                        <input type="text" placeholder="Port St Johns, EC" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} />
+                        <input type="text" autoComplete="off" placeholder="New York, NY" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={regForm.address} onChange={e => setRegForm({...regForm, address: e.target.value})} />
                     </div>
                     
                     <button onClick={handleInitiateRegister} disabled={authLoading} className="w-full bg-primary text-black py-4 rounded-xl font-bold shadow-lg flex justify-center items-center gap-2">
@@ -916,14 +930,14 @@ const App: React.FC = () => {
                     <p className="text-gray-500">We've sent a verification code to your inbox.</p>
                  </div>
                  <div className="space-y-6">
-                    <input type="text" placeholder="Enter 6-digit Code" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-3xl font-bold tracking-widest focus:border-primary outline-none" value={enteredOTP} onChange={e => setEnteredOTP(e.target.value)} maxLength={6} />
+                    <input type="text" autoComplete="off" placeholder="Enter 6-digit Code" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-3xl font-bold tracking-widest focus:border-primary outline-none" value={enteredOTP} onChange={e => setEnteredOTP(e.target.value)} maxLength={6} />
                     {activeTab === 'auth_reset_password' && (
                         <input type="password" placeholder="New Password" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 text-center" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
                     )}
                     <button onClick={activeTab === 'auth_verify_otp' ? handleVerifyOTP : handlePasswordReset} disabled={authLoading} className="w-full bg-black text-white py-4 rounded-xl font-bold">
                        {authLoading ? 'Verifying...' : 'Verify & Continue'}
                     </button>
-                    <button onClick={() => setActiveTab('auth_login')} className="text-sm font-bold text-gray-400 hover:text-black">Cancel</button>
+                    <button onClick={() => { setActiveTab('auth_login'); setRegForm(getInitialRegForm()); }} className="text-sm font-bold text-gray-400 hover:text-black">Cancel</button>
                  </div>
               </div>
             )}
@@ -935,12 +949,12 @@ const App: React.FC = () => {
                      <p className="text-gray-500">Enter your email to receive a reset code.</p>
                   </div>
                   <div className="space-y-6">
-                     <input type="email" placeholder="Email Address" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} />
+                     <input type="email" autoComplete="off" placeholder="Email Address" className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 focus:border-primary outline-none" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} />
                      <button onClick={handleForgotPasswordRequest} disabled={authLoading} className="w-full bg-black text-white py-4 rounded-xl font-bold">
                         {authLoading ? 'Sending...' : 'Send Reset Code'}
                      </button>
                      <div className="text-center">
-                        <button onClick={() => setActiveTab('auth_login')} className="text-sm font-bold text-gray-500 hover:text-black">Back to Login</button>
+                        <button onClick={() => { setActiveTab('auth_login'); setRegForm(getInitialRegForm()); }} className="text-sm font-bold text-gray-500 hover:text-black">Back to Login</button>
                      </div>
                   </div>
                </div>
@@ -973,7 +987,11 @@ const App: React.FC = () => {
                 <Icons.Dashboard /> <span className="font-medium">Dashboard</span>
                 {activeTab === 'dashboard' && navActiveIndicator()}
               </div>
-              <div onClick={() => { setActiveTab('post_job'); setIsSidebarOpen(false); }} className={navItemClass('post_job')}>
+              <div onClick={() => { 
+                setJobForm(getInitialJobForm()); // Reset Job Form on Click
+                setActiveTab('post_job'); 
+                setIsSidebarOpen(false); 
+              }} className={navItemClass('post_job')}>
                  <Icons.Plus /> <span className="font-medium">Post Job</span>
                  {activeTab === 'post_job' && navActiveIndicator()}
               </div>
@@ -1057,6 +1075,7 @@ const App: React.FC = () => {
                  <h1 className="text-xl md:text-2xl font-bold text-gray-900">
                    {activeTab === 'profile' ? 'My Profile' :
                     activeTab === 'search_job' ? 'Search Jobs' : 
+                    activeTab === 'job_details' ? 'Job Details' :
                     activeTab === 'dashboard' ? 'Dashboard' : 
                     activeTab === 'applications' ? 'My Applications' : 
                     activeTab === 'practice' ? 'Practice Interview' :
@@ -1168,7 +1187,122 @@ const App: React.FC = () => {
                 </div>
             )}
            
-           {/* SEARCH */}
+           {/* JOB DETAILS PAGE (Dedicated View) */}
+           {activeTab === 'job_details' && selectedJobDetail && (
+             <div className="max-w-5xl mx-auto animate-fade-in">
+                {/* Back Button */}
+                <button 
+                  onClick={() => setActiveTab('search_job')}
+                  className="mb-6 flex items-center gap-2 text-gray-500 hover:text-black font-bold text-sm transition"
+                >
+                   <Icons.ArrowLeft className="w-5 h-5" /> Back to Search
+                </button>
+
+                <div className="flex flex-col lg:flex-row gap-8">
+                   {/* Left Column: Main Content */}
+                   <div className="flex-1 space-y-8">
+                      {/* Header */}
+                      <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm relative overflow-hidden">
+                         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
+                         <h2 className="text-4xl font-black text-gray-900 mb-2 relative z-10">{selectedJobDetail.title}</h2>
+                         <div className="flex items-center gap-4 text-gray-600 mb-6 relative z-10">
+                            <span className="font-bold text-lg">{selectedJobDetail.company}</span>
+                            <span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span>
+                            <span className="text-gray-500">{selectedJobDetail.location}</span>
+                         </div>
+                         <button 
+                             onClick={() => handleResearchCompany(selectedJobDetail.company)}
+                             className="text-sm bg-blue-50 text-blue-700 px-4 py-2 rounded-full font-bold hover:bg-blue-100 transition flex items-center gap-2 w-fit border border-blue-100"
+                          >
+                             <Icons.Star className="w-4 h-4"/> Research Company
+                          </button>
+                      </div>
+
+                      {/* Research Result Section */}
+                      {showResearch && (
+                          <div className="animate-fade-in">
+                              {researchLoading ? (
+                                 <div className="p-6 bg-gray-50 rounded-[2rem] flex items-center gap-3">
+                                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <span className="text-gray-600 font-medium">Researching company culture and news...</span>
+                                 </div>
+                              ) : researchResult && (
+                                 <div className="p-8 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-[2rem] border border-blue-100 shadow-sm">
+                                    <h4 className="font-bold text-blue-900 mb-4 flex items-center gap-2 text-lg">
+                                      <Icons.Info className="w-6 h-6"/> AI Research Summary
+                                    </h4>
+                                    <p className="text-blue-800 leading-relaxed mb-6">{researchResult.text}</p>
+                                    {researchResult.links && researchResult.links.length > 0 && (
+                                       <div className="flex flex-wrap gap-2">
+                                          {researchResult.links.map((link: any, i: number) => (
+                                             link.web && (
+                                                <a key={i} href={link.web.uri} target="_blank" rel="noopener noreferrer" className="text-xs bg-white text-blue-600 px-3 py-1.5 rounded-lg border border-blue-200 hover:border-blue-400 truncate max-w-[250px] font-medium shadow-sm hover:shadow">
+                                                   {link.web.title}
+                                                </a>
+                                             )
+                                          ))}
+                                       </div>
+                                    )}
+                                 </div>
+                              )}
+                          </div>
+                      )}
+
+                      {/* Job Description */}
+                      <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm">
+                          <h3 className="text-xl font-bold text-gray-900 mb-6 border-b pb-4">Job Description</h3>
+                          <div className="prose text-gray-700 leading-relaxed whitespace-pre-wrap max-w-none">
+                              {selectedJobDetail.description}
+                          </div>
+                      </div>
+
+                      {/* Requirements */}
+                      <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm">
+                          <h3 className="text-xl font-bold text-gray-900 mb-6 border-b pb-4">Requirements</h3>
+                          <ul className="space-y-3">
+                              {selectedJobDetail.requirements.map((req, i) => (
+                                  <li key={i} className="flex items-start gap-3">
+                                      <div className="w-6 h-6 rounded-full bg-green-50 flex items-center justify-center text-green-600 shrink-0 mt-0.5">
+                                          <Icons.Check className="w-4 h-4" />
+                                      </div>
+                                      <span className="text-gray-700">{req}</span>
+                                  </li>
+                              ))}
+                          </ul>
+                      </div>
+                   </div>
+
+                   {/* Right Column: Meta & Actions */}
+                   <div className="lg:w-80 space-y-6">
+                      <div className="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm sticky top-6">
+                          <div className="space-y-6">
+                             <div>
+                                <span className="block text-xs text-gray-400 uppercase font-bold mb-1">Salary Range</span>
+                                <span className="block text-xl font-black text-gray-900">{selectedJobDetail.salaryRange}</span>
+                             </div>
+                             <div>
+                                <span className="block text-xs text-gray-400 uppercase font-bold mb-1">Employment Type</span>
+                                <span className="block font-medium text-gray-900 bg-gray-100 px-3 py-1 rounded-lg w-fit">{selectedJobDetail.type}</span>
+                             </div>
+                             <div>
+                                <span className="block text-xs text-gray-400 uppercase font-bold mb-1">Posted Date</span>
+                                <span className="block font-medium text-gray-900">{new Date(selectedJobDetail.postedDate).toLocaleDateString()}</span>
+                             </div>
+
+                             <button 
+                                onClick={() => handleApplyClick(selectedJobDetail)} 
+                                className="w-full bg-[#2b1c55] text-white py-4 rounded-xl font-bold text-lg shadow-xl hover:bg-black transition flex items-center justify-center gap-2 mt-4"
+                             >
+                                Apply Now <Icons.Send className="w-4 h-4" />
+                             </button>
+                          </div>
+                      </div>
+                   </div>
+                </div>
+             </div>
+           )}
+
+           {/* SEARCH LIST (Only show if not viewing details) */}
            {activeTab === 'search_job' && (
              <div className="animate-fade-in space-y-8">
                <div className="bg-gray-50 border border-gray-100 p-2 md:p-4 rounded-3xl shadow-sm flex flex-row items-stretch gap-2">
@@ -1328,7 +1462,7 @@ const App: React.FC = () => {
                       <div className="relative z-10">
                         <div className="text-white/70 font-bold text-sm uppercase tracking-wider mb-2">Active Jobs</div>
                         <div className="text-5xl font-black">{jobs.filter(j => j.postedBy === currentUser.id).length}</div>
-                        <button onClick={() => setActiveTab('post_job')} className="mt-6 bg-primary text-black px-6 py-2 rounded-xl text-sm font-bold hover:bg-white hover:text-black transition">Post New Job</button>
+                        <button onClick={() => { setJobForm(getInitialJobForm()); setActiveTab('post_job'); }} className="mt-6 bg-primary text-black px-6 py-2 rounded-xl text-sm font-bold hover:bg-white hover:text-black transition">Post New Job</button>
                       </div>
                    </div>
                    <div className="bg-gray-50 border border-gray-100 p-8 rounded-[2rem] shadow-sm">
@@ -1385,18 +1519,18 @@ const App: React.FC = () => {
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                          <label className="block text-sm font-bold text-gray-700 mb-2">Job Title</label>
-                         <input type="text" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={jobForm.title} onChange={e => setJobForm({...jobForm, title: e.target.value})} />
+                         <input type="text" autoComplete="off" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={jobForm.title} onChange={e => setJobForm({...jobForm, title: e.target.value})} />
                       </div>
                       <div>
                          <label className="block text-sm font-bold text-gray-700 mb-2">Company</label>
-                         <input type="text" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={jobForm.company} onChange={e => setJobForm({...jobForm, company: e.target.value})} />
+                         <input type="text" autoComplete="off" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={jobForm.company} onChange={e => setJobForm({...jobForm, company: e.target.value})} />
                       </div>
                    </div>
                    
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div>
                          <label className="block text-sm font-bold text-gray-700 mb-2">Location</label>
-                         <input type="text" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={jobForm.location} onChange={e => setJobForm({...jobForm, location: e.target.value})} />
+                         <input type="text" autoComplete="off" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={jobForm.location} onChange={e => setJobForm({...jobForm, location: e.target.value})} />
                       </div>
                       <div>
                          <label className="block text-sm font-bold text-gray-700 mb-2">Type</label>
@@ -1409,7 +1543,7 @@ const App: React.FC = () => {
                       </div>
                       <div>
                          <label className="block text-sm font-bold text-gray-700 mb-2">Salary Range</label>
-                         <input type="text" className="w-full p-3 bg-white rounded-xl border border-gray-200" placeholder="e.g. $50k - $70k" value={jobForm.salary} onChange={e => setJobForm({...jobForm, salary: e.target.value})} />
+                         <input type="text" autoComplete="off" className="w-full p-3 bg-white rounded-xl border border-gray-200" placeholder="e.g. $50k - $70k" value={jobForm.salary} onChange={e => setJobForm({...jobForm, salary: e.target.value})} />
                       </div>
                    </div>
 
@@ -1435,12 +1569,12 @@ const App: React.FC = () => {
                    
                    <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Requirements (comma separated)</label>
-                      <input type="text" className="w-full p-3 bg-white rounded-xl border border-gray-200" placeholder="React, Node.js, 3+ years exp..." value={jobForm.reqs} onChange={e => setJobForm({...jobForm, reqs: e.target.value})} />
+                      <input type="text" autoComplete="off" className="w-full p-3 bg-white rounded-xl border border-gray-200" placeholder="React, Node.js, 3+ years exp..." value={jobForm.reqs} onChange={e => setJobForm({...jobForm, reqs: e.target.value})} />
                    </div>
 
                    <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Screening Questions (comma separated)</label>
-                      <input type="text" className="w-full p-3 bg-white rounded-xl border border-gray-200" placeholder="Years of experience with React?, Are you willing to relocate?..." value={jobForm.questions} onChange={e => setJobForm({...jobForm, questions: e.target.value})} />
+                      <input type="text" autoComplete="off" className="w-full p-3 bg-white rounded-xl border border-gray-200" placeholder="Years of experience with React?, Are you willing to relocate?..." value={jobForm.questions} onChange={e => setJobForm({...jobForm, questions: e.target.value})} />
                    </div>
 
                    <button onClick={handlePostJob} className="w-full bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition shadow-lg mt-4">Post Job Now</button>
@@ -1636,7 +1770,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Apply Modal */}
+      {/* Apply Modal (Only shown over Detail Page now) */}
       {showApplyModal && selectedJob && currentUser && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
            <div className="bg-white rounded-[2rem] w-full max-w-lg p-8 shadow-2xl">
@@ -1656,92 +1790,6 @@ const App: React.FC = () => {
         </div>
       )}
       
-      {/* Job Details Modal */}
-      {selectedJobDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-scale-up">
-           <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto relative shadow-2xl p-8">
-              <button onClick={() => setSelectedJobDetail(null)} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:text-red-500">✕</button>
-              
-              <div className="mb-6">
-                  <h2 className="text-3xl font-bold text-gray-900 mb-2">{selectedJobDetail.title}</h2>
-                  <div className="flex items-center gap-3">
-                      <p className="text-lg text-gray-500">{selectedJobDetail.company}</p>
-                      <button 
-                         onClick={() => handleResearchCompany(selectedJobDetail.company)}
-                         className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-bold hover:bg-blue-100 transition flex items-center gap-1"
-                      >
-                         <Icons.Star className="w-3 h-3"/> Research Company
-                      </button>
-                  </div>
-              </div>
-
-              {showResearch && (
-                  <div className="mb-8 animate-fade-in">
-                      {researchLoading ? (
-                         <div className="p-4 bg-gray-50 rounded-xl flex items-center gap-3">
-                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                            <span className="text-sm text-gray-600 font-medium">Researching company culture and news...</span>
-                         </div>
-                      ) : researchResult && (
-                         <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100">
-                            <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
-                              <Icons.Info className="w-5 h-5"/> AI Research Summary
-                            </h4>
-                            <p className="text-blue-800 text-sm leading-relaxed mb-4">{researchResult.text}</p>
-                            {researchResult.links && researchResult.links.length > 0 && (
-                               <div className="flex flex-wrap gap-2">
-                                  {researchResult.links.map((link: any, i: number) => (
-                                     link.web && (
-                                        <a key={i} href={link.web.uri} target="_blank" rel="noopener noreferrer" className="text-xs bg-white text-blue-600 px-3 py-1 rounded-lg border border-blue-200 hover:border-blue-400 truncate max-w-[200px]">
-                                           {link.web.title}
-                                        </a>
-                                     )
-                                  ))}
-                               </div>
-                            )}
-                         </div>
-                      )}
-                  </div>
-              )}
-
-              <div className="space-y-6">
-                  <div>
-                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Description</h4>
-                      <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedJobDetail.description}</p>
-                  </div>
-                  
-                  <div>
-                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Requirements</h4>
-                      <ul className="list-disc pl-5 space-y-1 text-gray-700">
-                          {selectedJobDetail.requirements.map((req, i) => (
-                              <li key={i}>{req}</li>
-                          ))}
-                      </ul>
-                  </div>
-
-                  <div className="flex gap-4 pt-4 border-t border-gray-100">
-                     <div className="flex-1">
-                        <span className="block text-xs text-gray-400 uppercase font-bold">Location</span>
-                        <span className="font-medium text-gray-900">{selectedJobDetail.location}</span>
-                     </div>
-                     <div className="flex-1">
-                        <span className="block text-xs text-gray-400 uppercase font-bold">Salary</span>
-                        <span className="font-medium text-gray-900">{selectedJobDetail.salaryRange}</span>
-                     </div>
-                     <div className="flex-1">
-                        <span className="block text-xs text-gray-400 uppercase font-bold">Type</span>
-                        <span className="font-medium text-gray-900">{selectedJobDetail.type}</span>
-                     </div>
-                  </div>
-              </div>
-
-              <div className="mt-8">
-                <button onClick={() => handleApplyClick(selectedJobDetail)} className="w-full bg-[#2b1c55] text-white py-4 rounded-2xl font-bold text-lg shadow-xl hover:bg-black transition">Apply Now</button>
-              </div>
-           </div>
-        </div>
-      )}
-
       {/* Invite Modal */}
       {inviteModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">

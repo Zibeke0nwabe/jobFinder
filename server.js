@@ -128,14 +128,8 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Verify connection configuration on startup
-transporter.verify(function (error, success) {
-  if (error) {
-    console.error('❌ Email Service Error:', error);
-  } else {
-    console.log('✅ Email Service is ready to send messages');
-  }
-});
+// Removed explicit verification to prevent cold-start timeouts on platforms like Render.
+// If credentials are wrong, it will fail when trying to send an email, which is safer.
 
 const sendEmail = async ({ to, subject, html, cc }) => {
   try {
